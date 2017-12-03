@@ -6,6 +6,7 @@ using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents.Linq;
 using System.Linq;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace oops
 {
@@ -15,18 +16,45 @@ namespace oops
         {
             var source = GetClient("Source");
             var target = GetClient("Target");
-            
+
+            DoDocs(source, target);
+
+            Console.ReadLine();
+        }
+
+        /************ do stuff here *******************/
+        static dynamic ChangePartitionKey(dynamic val)
+        {
+            return val;
+        }
+
+        #region "Do Stuff"
+        
+        static void DoDocs((IDocumentClient Client, Uri CollectionUri) source, (IDocumentClient Client, Uri CollectionUri) target)
+        {
             var rs = GetNext(source.Client, source.CollectionUri, null, 20);
             while (rs.Records.Any())
             {
-                Console.WriteLine(rs.ContinuationToken + " " + rs.Records.Count);
+                var tasks = new List<Task>();
+                foreach (var r in rs.Records)
+                {
+                    var serialise = JsonConvert.SerializeObject(ChangePartitionKey(r), Formatting.None,
+                        new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore, DefaultValueHandling = DefaultValueHandling.Ignore });
+
+                    var newVal = JsonHelper.RemoveEmptyChildren(JToken.Parse(serialise));
+
+                    tasks.Add(target.Client.UpsertDocumentAsync(target.CollectionUri, newVal));
+                }
+                Task.WaitAll(tasks.ToArray());
+
+                Console.WriteLine($"{rs.ContinuationToken} - {rs.Records.Count} rows");
                 if (string.IsNullOrEmpty(rs.ContinuationToken))
                     break;
 
                 rs = GetNext(source.Client, source.CollectionUri, rs.ContinuationToken, 20);
             }
 
-            Console.ReadLine();
+            Console.WriteLine("All Done!");
         }
 
         public class PartialQueryResult<T>
@@ -59,7 +87,7 @@ namespace oops
             return new PartialQueryResult<T>()
             {
                 Records = feedResponse
-                    .Select(record => JsonConvert.DeserializeObject<T>(record.ToString()))
+                    .Select(record => JsonConvert.DeserializeObject<T>(record.ToString(), new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore }))
                     .Cast<T>()
                     .ToList(),
                 ContinuationToken = continuationToken
@@ -93,5 +121,7 @@ namespace oops
 
             return (client, collectionUri);
         }
+
+        #endregion
     }
 }
