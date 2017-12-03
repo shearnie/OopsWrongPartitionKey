@@ -5,6 +5,7 @@ using Microsoft.Azure.Documents;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents.Linq;
 using System.Linq;
+using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -14,23 +15,34 @@ namespace oops
     {
         static void Main(string[] args)
         {
-            var source = GetClient("Source");
-            var target = GetClient("Target");
+            //var source = GetClient("Source");
+            //var target = GetClient("Target");
 
-            DoDocs(source, target);
+            //Console.Write("Current partition key");
+            //var oldPartition = Console.ReadLine();
+
+            //Console.Write("New partition key");
+            //var newPartition = Console.ReadLine();
+
+            var source = GetClient(
+                "", "",
+                "", "");
+
+            var target = GetClient(
+                "", "",
+                "", "");
+
+            var oldPartition = "";
+            var newPartition = "";
+
+            DoDocs(source, target, oldPartition, newPartition);
 
             Console.ReadLine();
         }
-
-        /************ do stuff here *******************/
-        static dynamic ChangePartitionKey(dynamic val)
-        {
-            return val;
-        }
-
-        #region "Do Stuff"
-        
-        static void DoDocs((IDocumentClient Client, Uri CollectionUri) source, (IDocumentClient Client, Uri CollectionUri) target)
+       
+        static void DoDocs(
+            (IDocumentClient Client, Uri CollectionUri) source, (IDocumentClient Client, Uri CollectionUri) target, 
+            string oldPartition, string newPartition)
         {
             var rs = GetNext(source.Client, source.CollectionUri, null, 20);
             while (rs.Records.Any())
@@ -38,11 +50,11 @@ namespace oops
                 var tasks = new List<Task>();
                 foreach (var r in rs.Records)
                 {
-                    var serialise = JsonConvert.SerializeObject(ChangePartitionKey(r), Formatting.None,
-                        new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore, DefaultValueHandling = DefaultValueHandling.Ignore });
+                    var sb = new StringBuilder(JsonConvert.SerializeObject(r, Formatting.None));
+                    sb.Replace($"\"{oldPartition}\":", $"\"{newPartition}\":");
 
-                    var newVal = JsonHelper.RemoveEmptyChildren(JToken.Parse(serialise));
-
+                    var newVal = JsonConvert.DeserializeObject<dynamic>(sb.ToString());
+                    
                     tasks.Add(target.Client.UpsertDocumentAsync(target.CollectionUri, newVal));
                 }
                 Task.WaitAll(tasks.ToArray());
@@ -121,7 +133,5 @@ namespace oops
 
             return (client, collectionUri);
         }
-
-        #endregion
     }
 }
